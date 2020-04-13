@@ -21,7 +21,7 @@ def castCollision(p1, p2, p3, p4):#Finds collision of 2 lines (if it exists)
 	return Point(xNum / tuDenom, yNum / tuDenom)
 
 def calcAngle(obj): #Angle of an object relative to a point at the center. Used for a continuous reward function.
-		return -math.atan2((450 - obj.getY()), (obj.getX() - 550))
+	return -math.atan2((450 - obj.getY()), (obj.getX() - 550))
 
 def isContainingAxis(axis, o1, o2): #I made this up. It means one projection along the axis is contained within the other
 	min1, max1, min2, max2 = float('+inf'), float('-inf'), float('+inf'), float('-inf')
@@ -92,17 +92,44 @@ class Object:
 				return False
 		return True
 
+class Gate:
+	def __init__(self, pos1, pos2):
+		self.pos1 = pos1
+		self.pos2 = pos2
+		self.passed = False
+		self.within = False
+
+	def check(self, car):
+		if not self.passed and not self.within:
+			if not castCollision(Point(self.pos1[0], self.pos1[1]), Point(self.pos2[0], self.pos2[1]), Point(car.getX(), car.getY()), Point(car.getX() + 10, car.getY() + 10)) is None:
+				self.within = True
+
+		if not self.passed and self.within:
+			if castCollision(Point(self.pos1[0], self.pos1[1]), Point(self.pos2[0], self.pos2[1]), Point(car.getX(), car.getY()), Point(car.getX() + 10, car.getY() + 10)) is None:
+				self.passed = True
+				return True
+		return False
+
+	def draw(self, screen):
+		pygame.draw.line(screen, (0, 0, 0), self.pos1, self.pos2)
+	
+	def reset(self):
+		self.passed = False
+		self.within = False
+
 
 inner = Object(((200, 300), (200, 600), (500, 700), (1000, 600), (1100, 300), (500, 200)))#Inner Track
 outer = Object(((50, 100), (100, 800), (400, 890), (1290, 750), (1290, 150), (500, 10)))#Outer Track
+gates = (Gate((50, 300), (200, 300)), Gate((150, 70), (200, 300)), Gate((245, 55), (350, 250)), Gate((500, 10), (500, 200)), Gate((700, 55), (650, 230)), Gate((900, 75), (900, 300)), Gate((1290, 150), (1100, 300)), Gate((1290, 450), (1050, 450)), Gate((1290, 700), (1000, 600)), Gate((1000, 800), (990, 600)), Gate((700, 845), (750, 650)), Gate((400, 890), (500, 700)), Gate((250, 860), (260, 620)), Gate((80, 700), (200, 600)), Gate((50, 450), (200, 450)))
 BATCH_SIZE = 50
-GAMMA = 0.98
+GAMMA = 0.998
+
 
 class RocketCar:
 	length = 30
 	width = 20
 	mass = 1
-	drag = .6
+	drag = 1
 	def __init__(self, x, y, angle):
 		self.x = x
 		self.y = y
@@ -135,7 +162,7 @@ class RocketCar:
 		for a in angles:
 			minD = float('+inf')
 			for e in edges:
-				p = castCollision(Point(self.getX(), self.getY()), Point(self.getX() + (1600 * math.sin(math.radians(a + self.getTheta()))), self.getY() - (1600 * math.cos(math.radians(a + self.getTheta())))), Point(e[0][0], e[0][1]), Point(e[1][0], e[1][1]))
+				p = castCollision(Point(self.getX(), self.getY()), Point(self.getX() + (1600 * math.sin(math.radians(a))), self.getY() - (1600 * math.cos(math.radians(a)))), Point(e[0][0], e[0][1]), Point(e[1][0], e[1][1]))
 				if not (p is None):
 					if pCar.distTo(p) < minD:
 						minD = pCar.distTo(p)
@@ -171,7 +198,7 @@ class RocketCar:
 		self.car.draw(screen)
 
 	def reset(self):
-		self.setPos(140, 450, 0)
+		self.setPos(140, 370, 0)
 
 	def turn(self, theta):
 		self.angle += theta
@@ -191,8 +218,9 @@ class RocketCar:
 
 	def getVel(self):
 		vel = []
-		vel.append((self.xVel * math.cos(math.radians(self.angle))) + (self.yVel * math.sin(math.radians(self.angle))))
-		vel.append((self.yVel * math.cos(math.radians(self.angle))) + (self.xVel * math.sin(math.radians(self.angle))))
+		vel.append(self.xVel)
+		vel.append(self.yVel)
+		vel.append(self.angle)
 		return vel
 
 class Score:
@@ -283,34 +311,41 @@ class Runner:
 		self.car.reset()
 		self.car.update(0)
 		state = np.array(self.car.raycast() + self.car.getVel())
-		self.reward.reset(self.car)
+		maxReward = 0
+		for g in gates:
+			g.reset()
 		while True:
 			#Drawing stuff
 			self.screen.fill((255, 255, 255))
 			self.car.draw(self.screen)
 			inner.draw(self.screen)
 			outer.draw(self.screen)
-			pygame.display.flip()#This is definitely important for some reason (I just don't know it)
+			pygame.display.flip()
 			#Drawing stuff
 			action = self.chooseAction(state)#Chose an action (epsilon greedy)
 			done = self.car.update(action)#Update car, see if it's done(dead)
 			nextState = np.array(self.car.raycast() + self.car.getVel())#Find the next state
-			reward = self.reward.update(self.car)
+			reward = 0
+			for g in gates:
+				if g.check(self.car):
+					reward = 30
+					maxReward += 30
 			if done:
-				reward -= 40
+				reward -= 60
 				nextState = None
+
 			self.memory.add((state, action, reward, nextState))
 			self.replay()
-
+			
+			self.epsilon = self.epsilon * self.decay#Epsilon decay function except I'm bad at functions
 			self.steps += 1
-			self.epsilon = self.minE + math.pow(self.maxE - self.minE, self.decay * self.steps)
 
 			state = nextState
 			
 			if done:
 				self.maxRewards.append(self.reward.getScore())
 				break
-		print("Reward: {}, Eps: {}".format(self.reward.getScore(), self.epsilon))
+		print("Reward: {}, Eps: {}".format(maxReward, self.epsilon))
 
 	def chooseAction(self, state):
 		if random.random() < self.epsilon:
@@ -340,18 +375,19 @@ class Runner:
 #At this point, everthing is set up to begin training.
 
 _screen = pygame.display.set_mode([1300, 900])#The screen
-_car = RocketCar(140, 450, 0)#Car
+_car = RocketCar(140, 370, 0)#Car
 _reward = Score(_car)#Reward Function
-_model = Model(14, 4)
+_model = Model(15, 4)
 _mem = Memory(50000)
 
 with tf.Session() as sess:
 	sess.run(_model.varInit) #Necessary without eager execution for global variable initialization
-	gameRunner = Runner(sess, _model, _reward, _car, _screen, _mem, .9, .1, .0001)
+	gameRunner = Runner(sess, _model, _reward, _car, _screen, _mem, .9, .1, .999997)
 	episodes = 1000
 	count = 0
 	while count < episodes:
-		gameRunner.run()
 		count += 1
+		print("Iteration {} out of 1000".format(count))
+		gameRunner.run()
 
 pygame.quit()
