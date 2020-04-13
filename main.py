@@ -290,7 +290,7 @@ class Runner:
 			self.car.draw(self.screen)
 			inner.draw(self.screen)
 			outer.draw(self.screen)
-			pygame.display.flip()
+			pygame.display.flip()#This is definitely important for some reason (I just don't know it)
 			#Drawing stuff
 			action = self.chooseAction(state)#Chose an action (epsilon greedy)
 			done = self.car.update(action)#Update car, see if it's done(dead)
