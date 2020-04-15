@@ -153,7 +153,7 @@ class RocketCar:
 	def raycast(self):
 		edges = list(inner.getEdges()) + list(outer.getEdges())
 
-		angles = (0, 15, 30, 60, 90, 135, 180, 225, 270, 300, 330, 345)
+		angles = (0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330)
 
 		points = []
 
@@ -162,7 +162,7 @@ class RocketCar:
 		for a in angles:
 			minD = float('+inf')
 			for e in edges:
-				p = castCollision(Point(self.getX(), self.getY()), Point(self.getX() + (1600 * math.sin(math.radians(a))), self.getY() - (1600 * math.cos(math.radians(a)))), Point(e[0][0], e[0][1]), Point(e[1][0], e[1][1]))
+				p = castCollision(Point(self.getX(), self.getY()), Point(self.getX() + (1600 * math.sin(math.radians(a + self.getTheta()))), self.getY() - (1600 * math.cos(math.radians(a + self.getTheta())))), Point(e[0][0], e[0][1]), Point(e[1][0], e[1][1]))
 				if not (p is None):
 					if pCar.distTo(p) < minD:
 						minD = pCar.distTo(p)
@@ -325,13 +325,21 @@ class Runner:
 			action = self.chooseAction(state)#Chose an action (epsilon greedy)
 			done = self.car.update(action)#Update car, see if it's done(dead)
 			nextState = np.array(self.car.raycast() + self.car.getVel())#Find the next state
-			reward = 0
+			reward = -0.02 #Small negative reward applied every frame, to speed things up.
+
+			if gates[len(gates) - 1].check(self.car):#If it passes the last gate, reset all gates.
+				reward = 30
+				maxReward += 30
+				for g in gates:
+					g.reset()
+
 			for g in gates:
 				if g.check(self.car):
 					reward = 30
 					maxReward += 30
+
 			if done:
-				reward -= 60
+				reward -= 60#Because it hit a wall
 				nextState = None
 
 			self.memory.add((state, action, reward, nextState))
